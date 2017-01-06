@@ -1,10 +1,11 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -13,6 +14,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -24,6 +26,17 @@
 module Tisch.Internal.Table
  ( RCap(..)
  , WCap(..)
+ , Unique(..)
+ , UniqueSym0
+ , NotUniqueSym0
+ , SUnique
+ , RSym0
+ , RNSym0
+ , SRCap
+ , WSym0
+ , WDSym0
+ , ROSym0
+ , SWCap
  , WDef(..)
  , wdef
  , Column(..)
@@ -98,6 +111,7 @@ import qualified Data.Promotion.Prelude.List as List (Map)
 import           Data.Promotion.Prelude.Bool (If)
 import           Data.Proxy (Proxy(..))
 import           Data.Singletons
+import           Data.Singletons.TH (genSingletons)
 import           Data.Tagged
 import           Data.Type.Equality
 import           Data.Typeable (Typeable)
@@ -125,6 +139,7 @@ import           Tisch.Internal.Koln
 data RCap
   = R  -- ^ Only non @NULL@ values can be read from this column.
   | RN -- ^ Possibly read @NULL@ from this column.
+  deriving (Show)
 
 -- | Writing capabilities for a column.
 data WCap
@@ -132,6 +147,17 @@ data WCap
   | WD -- ^ Can write a specific value as well as @DEFAULT@. See 'WDef'.
   | RO -- ^ Can't write to the column, it is read-only.
        --   This is particularly useful for read-only views.
+  deriving (Show)
+
+-- | Is this column unique
+--
+-- This information is currently used in the generation of CREATE statements.
+data Unique
+  = Unique    -- ^ The values in this column are unique
+  | NotUnique -- ^ The values in this column may not be unique
+  deriving (Show)
+
+genSingletons [''RCap, ''WCap, ''Unique]
 
 --------------------------------------------------------------------------------
 
@@ -221,54 +247,58 @@ instance Aeson.ToJSON a => Aeson.ToJSON (WDef a) where
 -- /Notice that 'Col' is very different from 'Kol' and 'Koln': 'Kol' and 'Koln'/
 -- /are used at runtime for manipulating values stored in columns, 'Col' is used/
 -- /to describe the properties of a column at compile time./
-data Column name wcap rcap pgType hsType
-   = Column name wcap rcap pgType hsType
+--
+-- Is it also used at the term level when generating CREATE statements for
+-- tables.
+data Column name wcap rcap unique pgType hsType
+   = Column name wcap rcap unique pgType hsType
+  deriving (Show)
 
 --
 
-type family Column_Name (col :: Column Symbol WCap RCap Type Type) :: Symbol where
-  Column_Name ('Column n w r p h) = n
-data Column_NameSym0 (col :: TyFun (Column Symbol WCap RCap Type Type) Symbol)
+type family Column_Name (col :: Column Symbol WCap RCap Unique Type Type) :: Symbol where
+  Column_Name ('Column n w r u p h) = n
+data Column_NameSym0 (col :: TyFun (Column Symbol WCap RCap Unique Type Type) Symbol)
 type instance Apply Column_NameSym0 col = Column_Name col
 
-type family Column_PgType (col :: Column Symbol WCap RCap Type Type) :: Type where
-  Column_PgType ('Column n w r p h) = p
-data Column_PgTypeSym0 (col :: TyFun (Column Symbol WCap RCap Type Type) Type)
+type family Column_PgType (col :: Column Symbol WCap RCap Unique Type Type) :: Type where
+  Column_PgType ('Column n w r u p h) = p
+data Column_PgTypeSym0 (col :: TyFun (Column Symbol WCap RCap Unique Type Type) Type)
 type instance Apply Column_PgTypeSym0 col = Column_PgType col
 
-type family Column_PgR (col :: Column Symbol WCap RCap Type Type) :: Type where
-  Column_PgR ('Column n w 'R  p h) = Kol p
-  Column_PgR ('Column n w 'RN p h) = Koln p
-data Column_PgRSym0 (col :: TyFun (Column Symbol WCap RCap Type Type) Type)
+type family Column_PgR (col :: Column Symbol WCap RCap Unique Type Type) :: Type where
+  Column_PgR ('Column n w 'R  u p h) = Kol p
+  Column_PgR ('Column n w 'RN u p h) = Koln p
+data Column_PgRSym0 (col :: TyFun (Column Symbol WCap RCap Unique Type Type) Type)
 type instance Apply Column_PgRSym0 col = Column_PgR col
 
-type family Column_PgRN (col :: Column Symbol WCap RCap Type Type) :: Type where
-  Column_PgRN ('Column n w r p h) = Koln p
-data Column_PgRNSym0 (col :: TyFun (Column Symbol WCap RCap Type Type) Type)
+type family Column_PgRN (col :: Column Symbol WCap RCap Unique Type Type) :: Type where
+  Column_PgRN ('Column n w r u p h) = Koln p
+data Column_PgRNSym0 (col :: TyFun (Column Symbol WCap RCap Unique Type Type) Type)
 type instance Apply Column_PgRNSym0 col = Column_PgRN col
 
-type family Column_PgW (col :: Column Symbol WCap RCap Type Type) :: Type where
-  Column_PgW ('Column n 'W  r p h) = Column_PgR ('Column n 'W r p h)
-  Column_PgW ('Column n 'WD r p h) = WDef (Column_PgR ('Column n 'WD r p h))
-  Column_PgW ('Column n 'RO r p h) = GHC.TypeError
+type family Column_PgW (col :: Column Symbol WCap RCap Unique Type Type) :: Type where
+  Column_PgW ('Column n 'W  r u p h) = Column_PgR ('Column n 'W r u p h)
+  Column_PgW ('Column n 'WD r u p h) = WDef (Column_PgR ('Column n 'WD r u p h))
+  Column_PgW ('Column n 'RO r u p h) = GHC.TypeError
     ('GHC.Text "The column " 'GHC.:<>: 'GHC.ShowType n 'GHC.:<>:
      'GHC.Text " is not a writeable.")
-data Column_PgWSym0 (col :: TyFun (Column Symbol WCap RCap Type Type) Type)
+data Column_PgWSym0 (col :: TyFun (Column Symbol WCap RCap Unique Type Type) Type)
 type instance Apply Column_PgWSym0 col = Column_PgW col
 
-type family Column_HsR (col :: Column Symbol WCap RCap Type Type) :: Type where
-  Column_HsR ('Column n w 'R  p h) = h
-  Column_HsR ('Column n w 'RN p h) = Maybe h
-data Column_HsRSym0 (col :: TyFun (Column Symbol WCap RCap Type Type) Type)
+type family Column_HsR (col :: Column Symbol WCap RCap Unique Type Type) :: Type where
+  Column_HsR ('Column n w 'R  u p h) = h
+  Column_HsR ('Column n w 'RN u p h) = Maybe h
+data Column_HsRSym0 (col :: TyFun (Column Symbol WCap RCap Unique Type Type) Type)
 type instance Apply Column_HsRSym0 col = Column_HsR col
 
-type family Column_HsI (col :: Column Symbol WCap RCap Type Type) :: Type where
-  Column_HsI ('Column n 'W  r p h) = Column_HsR ('Column n 'W r p h)
-  Column_HsI ('Column n 'WD r p h) = WDef (Column_HsR ('Column n 'WD r p h))
-  Column_HsI ('Column n 'RO r p h) = GHC.TypeError
+type family Column_HsI (col :: Column Symbol WCap RCap Unique Type Type) :: Type where
+  Column_HsI ('Column n 'W  r u p h) = Column_HsR ('Column n 'W r u p h)
+  Column_HsI ('Column n 'WD r u p h) = WDef (Column_HsR ('Column n 'WD r u p h))
+  Column_HsI ('Column n 'RO r u p h) = GHC.TypeError
     ('GHC.Text "The column " 'GHC.:<>: 'GHC.ShowType n 'GHC.:<>:
      'GHC.Text " is not a writeable.")
-data Column_HsISym0 (col :: TyFun (Column Symbol WCap RCap Type Type) Type)
+data Column_HsISym0 (col :: TyFun (Column Symbol WCap RCap Unique Type Type) Type)
 type instance Apply Column_HsISym0 col = Column_HsI col
 
 --------------------------------------------------------------------------------
@@ -489,7 +519,7 @@ type family TableName (t :: k) :: Symbol
 -- | @'Columns' t@ specifies the columns for @'Table' t@. This a type-level list
 -- of type-level 'Column' values. Please see the documentation for 'Column' to
 -- learn more.
-type family Columns (t :: k) :: [Column Symbol WCap RCap Type Type]
+type family Columns (t :: k) :: [Column Symbol WCap RCap Unique Type Type]
 
 --------------------------------------------------------------------------------
 
@@ -587,8 +617,8 @@ instance Record.RBuild' axs (Record (Columns_NamedHsI t)) => Record.RBuild' axs 
 
 -- | Used by 'MkHsI'.
 type family Columns_CNamedFunArgs
-    (f :: TyFun (Column Symbol WCap RCap Type Type) Type -> Type)
-    (z :: Type) (cols :: [Column Symbol WCap RCap Type Type]) :: Type
+    (f :: TyFun (Column Symbol WCap RCap Unique Type Type) Type -> Type)
+    (z :: Type) (cols :: [Column Symbol WCap RCap Unique Type Type]) :: Type
  where
   Columns_CNamedFunArgs f z '[] = z
   Columns_CNamedFunArgs f z (x ': xs) =
@@ -666,51 +696,51 @@ colProps_wdrn = P.dimap (wdef Nothing Just . fmap unKoln) Koln . O.optional
 --------------------------------------------------------------------------------
 
 -- | 'O.TableProperties' for a single column in @'Columns' t@.
-type family Column_Props (col :: Column Symbol WCap RCap Type Type) :: Type where
-  Column_Props ('Column n 'RO r p h) =
-    O.TableProperties Void (Column_PgR ('Column n 'RO r p h))
+type family Column_Props (col :: Column Symbol WCap RCap Unique Type Type) :: Type where
+  Column_Props ('Column n 'RO r u p h) =
+    O.TableProperties Void (Column_PgR ('Column n 'RO r u p h))
   Column_Props col = O.TableProperties (Column_PgW col) (Column_PgR col)
-data Column_PropsSym0 (col :: TyFun (Column Symbol WCap RCap Type Type) Type)
+data Column_PropsSym0 (col :: TyFun (Column Symbol WCap RCap Unique Type Type) Type)
 type instance Apply Column_PropsSym0 t = Column_Props t
 
-class IColumn_Props (col :: Column Symbol WCap RCap Type Type) where
+class IColumn_Props (col :: Column Symbol WCap RCap Unique Type Type) where
   colProps :: proxy col -> Column_Props col
 
 -- | 'colProps' is equivalent 'colProps_ro'.
-instance forall n p h. (KnownSymbol n, PgTyped p) => IColumn_Props ('Column n 'RO 'R p h) where
+instance forall n u p h. (KnownSymbol n, PgTyped p) => IColumn_Props ('Column n 'RO 'R u p h) where
   colProps _ = colProps_ro (symbolVal (Proxy :: Proxy n))
   {-# INLINE colProps #-}
 -- | 'colProps' is equivalent 'colProps_ron'.
-instance forall n p h. (KnownSymbol n, PgTyped p) => IColumn_Props ('Column n 'RO 'RN p h) where
+instance forall n u p h. (KnownSymbol n, PgTyped p) => IColumn_Props ('Column n 'RO 'RN u p h) where
   colProps _ = colProps_ron (symbolVal (Proxy :: Proxy n))
   {-# INLINE colProps #-}
 -- | 'colProps' is equivalent 'colProps_wr'.
-instance forall n p h. (KnownSymbol n, PgTyped p) => IColumn_Props ('Column n 'W 'R p h) where
+instance forall n u p h. (KnownSymbol n, PgTyped p) => IColumn_Props ('Column n 'W 'R u p h) where
   colProps _ = colProps_wr (symbolVal (Proxy :: Proxy n))
   {-# INLINE colProps #-}
 -- | 'colProps' is equivalent 'colProps_wrn'.
-instance forall n p h. (KnownSymbol n, PgTyped p) => IColumn_Props ('Column n 'W 'RN p h) where
+instance forall n u p h. (KnownSymbol n, PgTyped p) => IColumn_Props ('Column n 'W 'RN u p h) where
   colProps _ = colProps_wrn (symbolVal (Proxy :: Proxy n))
   {-# INLINE colProps #-}
 -- | 'colProps' is equivalent 'colProps_wdr'.
-instance forall n p h. (KnownSymbol n, PgTyped p) => IColumn_Props ('Column n 'WD 'R p h) where
+instance forall n u p h. (KnownSymbol n, PgTyped p) => IColumn_Props ('Column n 'WD 'R u p h) where
   colProps _ = colProps_wdr (symbolVal (Proxy :: Proxy n))
   {-# INLINE colProps #-}
 -- | 'colProps' is equivalent 'colProps_wdrn'.
-instance forall n p h. (KnownSymbol n, PgTyped p) => IColumn_Props ('Column n 'WD 'RN p h) where
+instance forall n u p h. (KnownSymbol n, PgTyped p) => IColumn_Props ('Column n 'WD 'RN u p h) where
   colProps _ = colProps_wdrn (symbolVal (Proxy :: Proxy n))
   {-# INLINE colProps #-}
 
-class RDistributeColProps (cols :: [Column Symbol WCap RCap Type Type]) where
+class RDistributeColProps (cols :: [Column Symbol WCap RCap Unique Type Type]) where
   rDistributeColProps
     :: Proxy cols
     -> Record (List.Map (Column_NameSym0 :&&&$$$ Column_PropsSym0) cols)
 instance RDistributeColProps '[] where
   rDistributeColProps _ = RNil
-instance (RDistributeColProps cols, IColumn_Props ('Column n w r p h))
-  => RDistributeColProps ('Column n w r p h ': cols) where
-  rDistributeColProps (_ :: Proxy ('Column n w r p h ': cols)) =
-     RCons (Tagged @n (colProps (Proxy @('Column n w r p h))))
+instance (RDistributeColProps cols, IColumn_Props ('Column n w r u p h))
+  => RDistributeColProps ('Column n w r u p h ': cols) where
+  rDistributeColProps (_ :: Proxy ('Column n w r u p h ': cols)) =
+     RCons (Tagged @n (colProps (Proxy @('Column n w r u p h))))
            (rDistributeColProps (Proxy @cols))
 
 --------------------------------------------------------------------------------
@@ -799,7 +829,7 @@ instance forall n f t a b.
 --------------------------------------------------------------------------------
 -- Projection of column values through OverloadedLabels:
 
-type family Column_ByName (n :: Symbol) (cols :: [Column Symbol WCap RCap Type Type]) :: Column Symbol WCap RCap Type Type where
+type family Column_ByName (n :: Symbol) (cols :: [Column Symbol WCap RCap Unique Type Type]) :: Column Symbol WCap RCap Unique Type Type where
   Column_ByName n (c ': cs) = If (Column_Name c == n) c (Column_ByName n cs)
   Column_ByName n '[] = GHC.TypeError
     ('GHC.Text "Columns_ByName: No column named " 'GHC.:<>: 'GHC.ShowType n)
