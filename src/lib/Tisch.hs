@@ -38,6 +38,7 @@ module Tisch
  , TableName
  , Columns
  , Column(..)
+ , Unique(..)
  , RCap(..)
  , WCap(..)
    -- * Working with 'Table'

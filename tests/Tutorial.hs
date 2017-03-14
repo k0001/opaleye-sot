@@ -155,8 +155,8 @@ type instance TableName Department = "department"
 -- To better understand what's going on here, read the documentation for
 -- 'Column'.
 type instance Columns Department =
- '[ 'Column "department_id" 'WD 'R DepartmentId DepartmentId
-  , 'Column "name" 'W 'R PGText String
+ '[ 'Column "department_id" 'WD 'R 'Unique DepartmentId DepartmentId
+  , 'Column "name" 'W 'R 'NotUnique PGText String
   ]
 
 -- | As specified in @'Columns' 'Department'@, instead of just using 'Int32'
@@ -238,12 +238,12 @@ type instance Database Branch = Db1
 type instance SchemaName Branch = "public"
 type instance TableName Branch = "branch"
 type instance Columns Branch =
-    [ 'Column "branch_id" 'WD 'R BranchId BranchId
-    , 'Column "name" 'W 'R PGText String
-    , 'Column "address" 'W 'RN PGText String
-    , 'Column "city" 'W 'RN PGText String
-    , 'Column "state" 'W 'RN PGText String
-    , 'Column "zip" 'W 'RN PGText String
+    [ 'Column "branch_id" 'WD 'R 'Unique BranchId BranchId
+    , 'Column "name" 'W 'R 'NotUnique PGText String
+    , 'Column "address" 'W 'RN 'NotUnique PGText String
+    , 'Column "city" 'W 'RN 'NotUnique PGText String
+    , 'Column "state" 'W 'RN 'NotUnique PGText String
+    , 'Column "zip" 'W 'RN 'NotUnique PGText String
     ]
 
 ---
@@ -266,15 +266,15 @@ type instance Database Employee = Db1
 type instance SchemaName Employee = "public"
 type instance TableName Employee = "employee"
 type instance Columns Employee =
-    [ 'Column "employee_id" 'WD 'R EmployeeId EmployeeId
-    , 'Column "fname" 'W 'R PGText String
-    , 'Column "lname" 'W 'R PGText String
-    , 'Column "start_date" 'W 'R PGDate Day
-    , 'Column "end_date" 'W 'RN PGDate Day
-    , 'Column "superior_employee_id" 'W 'RN EmployeeId EmployeeId
-    , 'Column "department_id" 'W 'RN DepartmentId DepartmentId
-    , 'Column "title" 'W 'RN PGText String
-    , 'Column "assigned_branch_id" 'W 'RN BranchId BranchId
+    [ 'Column "employee_id" 'WD 'R 'Unique EmployeeId EmployeeId
+    , 'Column "fname" 'W 'R 'NotUnique PGText String
+    , 'Column "lname" 'W 'R 'NotUnique PGText String
+    , 'Column "start_date" 'W 'R 'NotUnique PGDate Day
+    , 'Column "end_date" 'W 'RN 'NotUnique PGDate Day
+    , 'Column "superior_employee_id" 'W 'RN 'NotUnique EmployeeId EmployeeId
+    , 'Column "department_id" 'W 'RN 'NotUnique DepartmentId DepartmentId
+    , 'Column "title" 'W 'RN 'NotUnique PGText String
+    , 'Column "assigned_branch_id" 'W 'RN 'NotUnique BranchId BranchId
     ]
 
 ---
@@ -296,8 +296,8 @@ type instance Database ProductType = Db1
 type instance SchemaName ProductType = "public"
 type instance TableName ProductType = "product_type"
 type instance Columns ProductType =
-    [ 'Column "product_type_cd" 'W 'R ProductTypeId ProductTypeId
-    , 'Column "name" 'W 'R PGText String
+    [ 'Column "product_type_cd" 'W 'R NotUnique ProductTypeId ProductTypeId
+    , 'Column "name" 'W 'R NotUnique PGText String
     ]
 
 ---
@@ -331,11 +331,11 @@ type instance Database Product = Db1
 type instance SchemaName Product = "public"
 type instance TableName Product = "product"
 type instance Columns Product =
-    [ 'Column "product_cd" 'W 'R ProductCode ProductCode
-    , 'Column "name" 'W 'R PGText String
-    , 'Column "product_type_cd" 'W 'R ProductTypeId ProductTypeId
-    , 'Column "date_offered" 'W 'RN PGDate Day
-    , 'Column "date_retired" 'W 'RN PGDate Day
+    [ 'Column "product_cd" 'W 'R NotUnique ProductCode ProductCode
+    , 'Column "name" 'W 'R NotUnique PGText String
+    , 'Column "product_type_cd" 'W 'R NotUnique ProductTypeId ProductTypeId
+    , 'Column "date_offered" 'W 'RN NotUnique PGDate Day
+    , 'Column "date_retired" 'W 'RN NotUnique PGDate Day
     ]
 
 ---
@@ -373,13 +373,13 @@ type instance Database Customer = Db1
 type instance SchemaName Customer = "public"
 type instance TableName Customer = "customer"
 type instance Columns Customer =
-    [ 'Column "customer_id" 'WD 'R CustomerId CustomerId
-    , 'Column "fed_id" 'W 'R PGText String -- I have no idea what "fed" is supposed to mean.
-    , 'Column "cust_type_cd" 'W 'R CustomerType CustomerType
-    , 'Column "address" 'W 'RN PGText String
-    , 'Column "city" 'W 'RN PGText String
-    , 'Column "state" 'W 'RN PGText String
-    , 'Column "postal_code" 'W 'RN PGText String
+    [ 'Column "customer_id" 'WD 'R 'Unique CustomerId CustomerId
+    , 'Column "fed_id" 'W 'R 'NotUnique PGText String -- I have no idea what "fed" is supposed to mean.
+    , 'Column "cust_type_cd" 'W 'R 'NotUnique CustomerType CustomerType
+    , 'Column "address" 'W 'RN 'NotUnique PGText String
+    , 'Column "city" 'W 'RN 'NotUnique PGText String
+    , 'Column "state" 'W 'RN 'NotUnique PGText String
+    , 'Column "postal_code" 'W 'RN 'NotUnique PGText String
     ]
 
 ---
@@ -390,10 +390,10 @@ type instance Database Individual = Db1
 type instance SchemaName Individual = "public"
 type instance TableName Individual = "individual"
 type instance Columns Individual =
-    [ 'Column "customer_id" 'W 'R CustomerId CustomerId
-    , 'Column "fname" 'W 'R PGText String
-    , 'Column "lname" 'W 'R PGText String
-    , 'Column "birth_date" 'W 'RN PGDate Day
+    [ 'Column "customer_id" 'W 'R 'Unique CustomerId CustomerId
+    , 'Column "fname" 'W 'R 'NotUnique PGText String
+    , 'Column "lname" 'W 'R 'NotUnique PGText String
+    , 'Column "birth_date" 'W 'RN 'NotUnique PGDate Day
     ]
 
 ---
@@ -415,10 +415,10 @@ type instance Database Business = Db1
 type instance SchemaName Business = "public"
 type instance TableName Business = "business"
 type instance Columns Business =
-    [ 'Column "customer_id" 'W 'R CustomerId CustomerId
-    , 'Column "name" 'W 'R PGText String
-    , 'Column "state_id" 'W 'R BizStateId BizStateId
-    , 'Column "incorp_date" 'W 'RN PGDate Day
+    [ 'Column "customer_id" 'W 'R 'Unique CustomerId CustomerId
+    , 'Column "name" 'W 'R 'NotUnique PGText String
+    , 'Column "state_id" 'W 'R 'NotUnique BizStateId BizStateId
+    , 'Column "incorp_date" 'W 'RN 'NotUnique PGDate Day
     ]
 
 ---
@@ -440,13 +440,13 @@ type instance Database Officer = Db1
 type instance SchemaName Officer = "public"
 type instance TableName Officer = "officer"
 type instance Columns Officer =
-    [ 'Column "officer_id" 'WD 'R OfficerId OfficerId
-    , 'Column "customer_id" 'W 'R CustomerId CustomerId
-    , 'Column "fname" 'W 'R PGText String
-    , 'Column "lname" 'W 'R PGText String
-    , 'Column "title" 'W 'RN PGText String
-    , 'Column "start_date" 'W 'R PGDate Day
-    , 'Column "end_date" 'W 'RN PGDate Day
+    [ 'Column "officer_id" 'WD 'R 'Unique OfficerId OfficerId
+    , 'Column "customer_id" 'W 'R 'NotUnique CustomerId CustomerId
+    , 'Column "fname" 'W 'R 'NotUnique PGText String
+    , 'Column "lname" 'W 'R 'NotUnique PGText String
+    , 'Column "title" 'W 'RN 'NotUnique PGText String
+    , 'Column "start_date" 'W 'R 'NotUnique PGDate Day
+    , 'Column "end_date" 'W 'RN 'NotUnique PGDate Day
     ]
 
 ---
@@ -492,17 +492,17 @@ type instance Database Account = Db1
 type instance SchemaName Account = "public"
 type instance TableName Account = "account"
 type instance Columns Account =
-    [ 'Column "account_id" 'WD 'R AccountId AccountId
-    , 'Column "product_cd" 'W 'R ProductCode ProductCode
-    , 'Column "customer_id" 'W 'R CustomerId CustomerId
-    , 'Column "open_date" 'W 'R PGDate Day
-    , 'Column "close_date" 'W 'RN PGDate Day
-    , 'Column "last_activity_date" 'W 'RN PGDate Day
-    , 'Column "status" 'W 'R AccountStatus AccountStatus
-    , 'Column "open_branch_id" 'W 'RN PGInt4 BranchId
-    , 'Column "open_employee_id" 'W 'RN PGInt4 EmployeeId
-    , 'Column "avail_balance" 'W 'RN PGFloat4 Float
-    , 'Column "pending_balance" 'W 'RN PGFloat4 Float
+    [ 'Column "account_id" 'WD 'R 'Unique AccountId AccountId
+    , 'Column "product_cd" 'W 'R 'NotUnique ProductCode ProductCode
+    , 'Column "customer_id" 'W 'R 'NotUnique CustomerId CustomerId
+    , 'Column "open_date" 'W 'R 'NotUnique PGDate Day
+    , 'Column "close_date" 'W 'RN 'NotUnique PGDate Day
+    , 'Column "last_activity_date" 'W 'RN 'NotUnique PGDate Day
+    , 'Column "status" 'W 'R 'NotUnique AccountStatus AccountStatus
+    , 'Column "open_branch_id" 'W 'RN 'NotUnique PGInt4 BranchId
+    , 'Column "open_employee_id" 'W 'RN 'NotUnique PGInt4 EmployeeId
+    , 'Column "avail_balance" 'W 'RN 'NotUnique PGFloat4 Float
+    , 'Column "pending_balance" 'W 'RN 'NotUnique PGFloat4 Float
     ]
 
 ---
@@ -543,14 +543,14 @@ type instance Database Transaction = Db1
 type instance SchemaName Transaction = "public"
 type instance TableName Transaction = "transaction"
 type instance Columns Transaction =
-   '[ 'Column "txn_id" 'WD 'R TransactionId TransactionId
-    , 'Column "txn_date" 'W 'R PGTimestamp LocalTime
-    , 'Column "account_id" 'W 'R AccountId AccountId
-    , 'Column "txn_type_cd" 'W 'RN TransactionType TransactionType
-    , 'Column "amount" 'W 'R PGFloat4 Float
-    , 'Column "teller_employee_id" 'W 'RN EmployeeId EmployeeId
-    , 'Column "execution_branch_id" 'W 'RN BranchId BranchId
-    , 'Column "funds_avail_date" 'W 'RN PGTimestamp LocalTime
+   '[ 'Column "txn_id" 'WD 'R 'Unique TransactionId TransactionId
+    , 'Column "txn_date" 'W 'R 'NotUnique PGTimestamp LocalTime
+    , 'Column "account_id" 'W 'R 'NotUnique AccountId AccountId
+    , 'Column "txn_type_cd" 'W 'RN 'NotUnique TransactionType TransactionType
+    , 'Column "amount" 'W 'R 'NotUnique PGFloat4 Float
+    , 'Column "teller_employee_id" 'W 'RN 'NotUnique EmployeeId EmployeeId
+    , 'Column "execution_branch_id" 'W 'RN 'NotUnique BranchId BranchId
+    , 'Column "funds_avail_date" 'W 'RN 'NotUnique PGTimestamp LocalTime
     ]
 
 --------------------------------------------------------------------------------
