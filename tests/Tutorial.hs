@@ -628,7 +628,7 @@ q_Account_agg_subq = proc () -> do
 
 exampleRun
   :: Allow 'Fetch ps
-  => Conn ps
+  => Conn ps Db1
   -> IO ( [HsR Account]
         , [HsR Account]
         , [HsR Account]
