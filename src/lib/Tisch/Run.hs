@@ -114,27 +114,29 @@ data Perm
     -- ^ Allow creating transactions savepoints and rolling back to them.
   deriving (Eq, Ord, Show)
 
--- | @'Conn' perms@ is just a wrapper around @postgresql-simple@'s
--- 'Pg.Connection' that carries, in @perms@, type-level information about which
--- kind of operations can be performed on this connection.
+-- | @'Conn' d perms@ is just a wrapper around @postgresql-simple@'s
+-- 'Pg.Connection' that carries, in @d@ the type level representation of
+-- the database which the connection is attatched to, and in @perms@,
+-- type-level information about which kind of operations can
+-- be performed on this connection.
 --
 -- The problem with 'Pg.Connection' is that it allows us to perform any operation
 -- on it (reading, inserting, commiting a transaction, etc.), but sometimes we
 -- would prefer to limit the type of operations this connection might support.
 -- For example, we might want to forbid transactions from being commited because
--- they are being handled by someone else. @'Conn' perms@ carries type-level
+-- they are being handled by someone else. @'Conn' d perms@ carries type-level
 -- information about this.
 --
 -- Note that 'Conn' is not thread-safe, you are encouraged to maintain a
 -- multithreaded pool of 'Conn' instead. See "Data.Pool" from the @ex-pool@
 -- package.
-newtype Conn (perms :: [Perm]) d = Conn Pg.Connection
+newtype Conn (d :: k) (perms :: [Perm]) = Conn Pg.Connection
 
-unConn :: Conn ps d -> Pg.Connection
+unConn :: Conn d ps -> Pg.Connection
 unConn (Conn conn) = conn
 
 -- | A type synonym for a 'Conn' with all the permissions enabled.
-type Conn' d = Conn ['Fetch, 'Insert, 'Update, 'Delete, 'Transact] d
+type Conn' d = Conn d ['Fetch, 'Insert, 'Update, 'Delete, 'Transact]
 
 -- | @'Allow' p ps@ ensures that @p@ is present in @ps@.
 --
@@ -172,27 +174,27 @@ withoutPerm
   :: (MonadIO m, Cx.MonadMask m, Allow p ps, ps' ~ DropPerm p ps)
   => proxy (p :: k)
   -- ^ @k@ may be 'Perm' or @['Perm']@.
-  -> Conn ps d
-  -> (Conn ps' d -> m a)
-  -- ^ The usage of @'Conn' ps@ is undefined within this function,
-  -- and @'Conn' ps'@ mustn't escape the scope of this function.
+  -> Conn d ps
+  -> (Conn d ps' -> m a)
+  -- ^ The usage of @'Conn' d ps@ is undefined within this function,
+  -- and @'Conn' d ps'@ mustn't escape the scope of this function.
   -> m a
 withoutPerm _ (Conn conn) f = f (Conn conn)
 
 -- | Open a new connection.
-connect :: MonadIO m => proxy d -> Pg.ConnectInfo -> m (Conn' d)
-connect pd info = connect' pd $ Pg.postgreSQLConnectionString info
+connect :: MonadIO m => Pg.ConnectInfo -> m (Conn' d)
+connect = connect' . Pg.postgreSQLConnectionString
 
 -- | Like 'connect', except it takes a @libpq@ connection string instead of a
 -- 'Pg.ConnectInfo'.
-connect' :: MonadIO m => proxy d -> B8.ByteString -> m (Conn' d)
-connect' _ bs = liftIO . fmap Conn . Pg.connectPostgreSQL $ bs
+connect' :: MonadIO m => B8.ByteString -> m (Conn' d)
+connect' = liftIO . fmap Conn . Pg.connectPostgreSQL
 
 -- | Colse a connection.
 --
--- Warning: Using the given @'Conn' ps@ after calling 'close' will result in
+-- Warning: Using the given @'Conn' d ps@ after calling 'close' will result in
 -- a runtime exception.
-close :: (MonadIO m, Cx.MonadMask m) => Conn ps d -> m ()
+close :: (MonadIO m, Cx.MonadMask m) => Conn d ps -> m ()
 close (Conn conn) = liftIO (Pg.close conn)
 
 --------------------------------------------------------------------------------
@@ -215,10 +217,10 @@ withReadOnlyTransaction
   :: (MonadIO m, Cx.MonadMask m, Allow 'Transact ps, Forbid 'Savepoint ps,
       ps' ~ DropPerm ['Transact, 'Insert, 'Update, 'Delete] ps)
   => IsolationLevel
-  -> Conn ps d
-  -> (Conn ps' d -> m a)
-  -- ^ The usage of @'Conn' ps@ is undefined within this function,
-  -- as well as the usage of @'Conn' ps'@ outside this function.
+  -> Conn d ps
+  -> (Conn d ps' -> m a)
+  -- ^ The usage of @'Conn' d ps@ is undefined within this function,
+  -- as well as the usage of @'Conn' d ps'@ outside this function.
   -> m a
 withReadOnlyTransaction il (Conn conn) f = Cx.mask $ \restore -> do
   let tmode = Pg.TransactionMode (pgIsolationLevel il) Pg.ReadOnly
@@ -234,10 +236,10 @@ withReadWriteTransaction
  :: (MonadIO m, Cx.MonadMask m, Allow 'Transact ps, Forbid 'Savepoint ps,
      ps' ~ ('Savepoint ': DropPerm 'Transact ps))
  => IsolationLevel
- -> Conn ps d
- -> (Conn ps' d -> m (Either a b))
- -- ^ The usage of @'Conn' ps@ is undefined within this function,
- -- as well as the usage of @'Conn' ps'@ outside this function.
+ -> Conn d ps
+ -> (Conn d ps' -> m (Either a b))
+ -- ^ The usage of @'Conn' d ps@ is undefined within this function,
+ -- as well as the usage of @'Conn' d ps'@ outside this function.
  -- A 'Left' return value rollbacks the transaction, 'Right' commits it.
  -> m (Either a b)
 withReadWriteTransaction il (Conn conn) f = Cx.mask $ \restore -> do
@@ -252,8 +254,8 @@ withReadWriteTransaction il (Conn conn) f = Cx.mask $ \restore -> do
 -- transaction.
 withSavepoint
   :: (MonadIO m, Cx.MonadMask m, Allow 'Savepoint ps, Forbid 'Transact ps)
-  => Conn ps d
-  -> (Conn ps d -> m (Either a b))
+  => Conn d ps
+  -> (Conn d ps -> m (Either a b))
   -- ^ A 'Left' return value rollbacks the savepoint, 'Right' keeps it.
   -> m (Either a b)
 withSavepoint (Conn conn) f = Cx.mask $ \restore -> do
@@ -267,7 +269,7 @@ withSavepoint (Conn conn) f = Cx.mask $ \restore -> do
 -- | Query and fetch zero or more resulting rows.
 runQuery
  :: (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v r, Allow 'Fetch ps)
- => Conn ps d -> Query d () v -> m [r] -- ^
+ => Conn d ps -> Query d () v -> m [r] -- ^
 runQuery (Conn conn) = liftIO . O.runQuery conn . unQuery
 
 -- | Query and fetch zero or one resulting row.
@@ -276,7 +278,7 @@ runQuery (Conn conn) = liftIO . O.runQuery conn . unQuery
 runQuery1
  :: forall v d r m ps
   . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v r, Allow 'Fetch ps)
- => Conn ps d -> Query d () v -> m (Maybe r) -- ^
+ => Conn d ps -> Query d () v -> m (Maybe r) -- ^
 runQuery1 pc q = do
     rs <- runQuery pc q
     case rs of
@@ -295,7 +297,7 @@ runQuery1 pc q = do
 -- this behavior (hint: you probably want this behavior).
 runInsert
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, TableRW t, Database t ~ d)
-  => Conn ps d -> Table t -> [HsI t] -> m () -- ^
+  => Conn d ps -> Table t -> [HsI t] -> m () -- ^
 runInsert conn t = runInsertRaw conn (rawTableRW t) . map pgWfromHsI
 
 -- | Insert a single row into a 'Table'.
@@ -305,7 +307,7 @@ runInsert conn t = runInsertRaw conn (rawTableRW t) . map pgWfromHsI
 -- probably want this behavior).
 runInsert1
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, TableRW t, Database t ~ d)
-  => Conn ps d -> Table t -> HsI t -> m () -- ^
+  => Conn d ps -> Table t -> HsI t -> m () -- ^
 runInsert1 conn t = runInsertRaw1 conn (rawTableRW t) . pgWfromHsI
 
 -- | Like 'runInsert', but instead of possibly throwing 'ErrNumRows' it returns
@@ -313,7 +315,7 @@ runInsert1 conn t = runInsertRaw1 conn (rawTableRW t) . pgWfromHsI
 -- passed in rows.
 runInsertNoCountCheck
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps, TableRW t, Database t ~ d)
-  => Conn ps d -> Table t -> [HsI t] -> m Int64 -- ^
+  => Conn d ps -> Table t -> [HsI t] -> m Int64 -- ^
 runInsertNoCountCheck conn t =
   runInsertRawNoCountCheck conn (rawTableRW t) . map pgWfromHsI
 
@@ -321,7 +323,7 @@ runInsertNoCountCheck conn t =
 -- | Like 'runInsert', but takes a 'RawTable' instead of a 'Table'.
 runInsertRaw
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps)
-  => Conn ps d -> RawTable d w v -> [w] -> m () -- ^
+  => Conn d ps -> RawTable d w v -> [w] -> m () -- ^
 runInsertRaw conn t = \case
   [] -> return ()
   ws -> do
@@ -335,7 +337,7 @@ runInsertRaw conn t = \case
 -- | Like 'runInsertNoCountCheck', but takes a 'RawTable' instead of a 'Table'.
 runInsertRawNoCountCheck
   :: (MonadIO m, Allow 'Insert ps)
-  => Conn ps d -> RawTable d w v -> [w] -> m Int64 -- ^
+  => Conn d ps -> RawTable d w v -> [w] -> m Int64 -- ^
 runInsertRawNoCountCheck (Conn conn) (RawTable t) = \case
   [] -> return 0
   ws -> liftIO (O.runInsertMany conn t ws)
@@ -343,7 +345,7 @@ runInsertRawNoCountCheck (Conn conn) (RawTable t) = \case
 -- | Like 'runInsert1', but takes a 'RawTable' instead of a 'Table'.
 runInsertRaw1
   :: (MonadIO m, Cx.MonadThrow m, Allow 'Insert ps)
-  => Conn ps d -> RawTable d w v -> w -> m () -- ^
+  => Conn d ps -> RawTable d w v -> w -> m () -- ^
 runInsertRaw1 pc t w = runInsertRaw pc t [w]
 
 --------------------------------------------------------------------------------
@@ -356,7 +358,7 @@ runInsertRaw1 pc t w = runInsertRaw pc t [w]
 runInsertReturning
   :: (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v r, TableRW t,
       Database t ~ d, Allow ['Insert, 'Fetch] ps)
-  => Conn ps d -> Table t -> (PgR t -> v) -> [HsI t] -> m [r] -- ^
+  => Conn d ps -> Table t -> (PgR t -> v) -> [HsI t] -> m [r] -- ^
 runInsertReturning conn t g =
   runInsertRawReturning conn (rawTableRW t) g . map pgWfromHsI
 
@@ -367,7 +369,7 @@ runInsertReturning conn t g =
 runInsertReturningNoCountCheck
   :: (MonadIO m, PP.Default O.QueryRunner v r, TableRW t, Database t ~ d,
       Allow ['Insert, 'Fetch] ps)
-  => Conn ps d -> Table t -> (PgR t -> v) -> [HsI t] -> m [r] -- ^
+  => Conn d ps -> Table t -> (PgR t -> v) -> [HsI t] -> m [r] -- ^
 runInsertReturningNoCountCheck conn t g =
   runInsertRawReturningNoCountCheck conn (rawTableRW t) g . map pgWfromHsI
 
@@ -379,7 +381,7 @@ runInsertReturningNoCountCheck conn t g =
 runInsertReturning1
   :: (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v r, TableRW t,
       Database t ~ d, Allow ['Insert, 'Fetch] ps)
-  => Conn ps d -> Table t -> (PgR t -> v) -> HsI t -> m r -- ^
+  => Conn d ps -> Table t -> (PgR t -> v) -> HsI t -> m r -- ^
 runInsertReturning1 conn t g =
   runInsertRawReturning1 conn (rawTableRW t) g . pgWfromHsI
 
@@ -388,7 +390,7 @@ runInsertRawReturning
   :: forall m ps w v v' r d
    . (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v' r,
       Allow ['Insert, 'Fetch] ps)
-  => Conn ps d -> RawTable d w v -> (v -> v') -> [w] -> m [r] -- ^
+  => Conn d ps -> RawTable d w v -> (v -> v') -> [w] -> m [r] -- ^
 runInsertRawReturning conn t g = \case
   [] -> return []
   ws -> do
@@ -408,7 +410,7 @@ runInsertRawReturning conn t g = \case
 -- 'Table'.
 runInsertRawReturningNoCountCheck
   :: (MonadIO m, PP.Default O.QueryRunner v' r, Allow ['Insert, 'Fetch] ps)
-  => Conn ps d -> RawTable d w v -> (v -> v') -> [w] -> m [r] -- ^
+  => Conn d ps -> RawTable d w v -> (v -> v') -> [w] -> m [r] -- ^
 runInsertRawReturningNoCountCheck (Conn conn) (RawTable t) g = \case
   [] -> return []
   ws -> liftIO $ O.runInsertManyReturning conn t ws g
@@ -417,7 +419,7 @@ runInsertRawReturningNoCountCheck (Conn conn) (RawTable t) g = \case
 runInsertRawReturning1
   :: (MonadIO m, Cx.MonadThrow m, PP.Default O.QueryRunner v' r,
       Allow ['Insert, 'Fetch] ps)
-  => Conn ps d -> RawTable d w v -> (v -> v') -> w -> m r -- ^
+  => Conn d ps -> RawTable d w v -> (v -> v') -> w -> m r -- ^
 runInsertRawReturning1 pc t g w = do
    -- Pattern matching on [r] is safe here, see 'runInsertReturning'.
    [r] <- runInsertRawReturning pc t g [w]
@@ -428,7 +430,7 @@ runInsertRawReturning1 pc t g w = do
 -- | Like 'runUpdate' but takes a 'RawTable' instead of a 'Table'.
 runUpdateRaw
   :: (MonadIO m, Allow 'Update ps)
-  => Conn ps d -> RawTable d w r -> (r -> w) -> (r -> Kol O.PGBool) -> m Int64 -- ^
+  => Conn d ps -> RawTable d w r -> (r -> w) -> (r -> Kol O.PGBool) -> m Int64 -- ^
 runUpdateRaw (Conn conn) (RawTable t) upd fil =
   liftIO (O.runUpdate conn t upd (unKol . fil))
 
@@ -436,7 +438,7 @@ runUpdateRaw (Conn conn) (RawTable t) upd fil =
 -- predicate. Returns the number of actually updated rows.
 runUpdate
   :: (TableRW t, MonadIO m, Allow 'Update ps, TableRW t, Database t ~ d)
-  => Conn ps d
+  => Conn d ps
   -> Table t
   -> (PgW t -> PgW t)        -- ^ Upgrade current values to new values.
   -> (PgR t -> Kol O.PGBool) -- ^ Whether a row should be updated.
@@ -448,7 +450,7 @@ runUpdate pc t upd = runUpdateRaw pc (rawTableRW t) (upd . pgWfromPgR)
 -- | Like 'runDelete' but takes a 'RawTable' instead of a 'Table'.
 runDeleteRaw
   :: (MonadIO m, Allow 'Delete ps)
-  => Conn ps d -> RawTable d w r -> (r -> Kol O.PGBool) -> m Int64 -- ^
+  => Conn d ps -> RawTable d w r -> (r -> Kol O.PGBool) -> m Int64 -- ^
 runDeleteRaw (Conn conn) (RawTable t) fil =
   liftIO (O.runDelete conn t (unKol . fil))
 
@@ -456,7 +458,7 @@ runDeleteRaw (Conn conn) (RawTable t) fil =
 -- predicate. Returns the number of deleted rows.
 runDelete
   :: (TableRW t, MonadIO m, Allow 'Delete ps, TableRW t, Database t ~ d)
-  => Conn ps d
+  => Conn d ps
   -> Table t
   -> (PgR t -> Kol O.PGBool) -- ^ Whether a row should be deleted.
   -> m Int64
