@@ -1,10 +1,9 @@
-{-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE PolyKinds                 #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE TypeFamilies              #-}
-{-# LANGUAGE TypeOperators             #-}
-{-# LANGUAGE UndecidableInstances      #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Tisch.Internal.Singletons
  ( (:&&&)
@@ -14,8 +13,8 @@ module Tisch.Internal.Singletons
  , (:&&&$$$$)
  ) where
 
-import           Data.Kind
-import           Data.Singletons.TH
+import Data.Kind
+import Data.Singletons.TH
 
 type (:&&&$$$$) (y :: TyFun x y4 -> Type)
                 (z :: TyFun x z5 -> Type)
