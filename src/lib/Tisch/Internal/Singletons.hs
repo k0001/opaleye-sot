@@ -16,9 +16,9 @@ module Tisch.Internal.Singletons
 import Data.Kind
 import Data.Singletons.TH
 
-type (:&&&$$$$) (y :: TyFun x y4 -> Type)
-                (z :: TyFun x z5 -> Type)
-                (a :: x3) = (:&&&) y z a
+type (:&&&$$$$) (a :: TyFun x y -> Type)
+                (b :: TyFun x z -> Type)
+                (c :: x) = (:&&&) a b c
 
 data (:&&&$$$) (h :: TyFun x y -> Type)
                (i :: TyFun x z -> Type)
@@ -31,6 +31,10 @@ data (:&&&$)
      (b :: TyFun (TyFun x y -> Type)
                  (TyFun (TyFun x z -> Type)
                         (TyFun x (y, z) -> Type) -> Type))
+
+type instance Apply (:&&&$) b = (:&&&$$) b
+type instance Apply ((:&&&$$) a) b = (:&&&$$$) a b
+type instance Apply ((:&&&$$$) a b) c = (:&&&$$$$) a b c
 
 type family (:&&&) (k :: TyFun d e -> Type)
                    (l :: TyFun d f -> Type)
