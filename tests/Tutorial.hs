@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {- | @tisch@ is a different API for the core @opaleye@
@@ -61,30 +62,31 @@ infrastructure with the following goals in mind:
 -}
 module Tutorial
   ( Department
-  , DepartmentId(..)
+  , DepartmentId
   , Branch
-  , BranchId(..)
+  , BranchId
   , Employee
-  , EmployeeId(..)
+  , EmployeeId
   , ProductType
-  , ProductTypeId(..)
+  , ProductTypeId
   , Product
-  , ProductId(..)
+  , ProductId
   , ProductCode(..)
   , Customer
-  , CustomerId(..)
+  , CustomerId
   , CustomerType(..)
   , Individual
   , Business
   , Officer
-  , OfficerId(..)
+  , OfficerId
   , Account
-  , AccountId(..)
+  , AccountId
   , AccountStatus(..)
   , Transaction
-  , TransactionId(..)
+  , TransactionId
   , TransactionType(..)
   , Table(..)
+  , Key(..)
   , q_Account_desc
   , q_Account_asc_multi
   , q_Account_in_static
@@ -154,6 +156,7 @@ type instance TableName Department = "department"
 --
 -- To better understand what's going on here, read the documentation for
 -- 'Column'.
+type DepartmentId = Key Department Int32
 type instance Columns Department =
  '[ 'Column "department_id" 'WD 'R DepartmentId DepartmentId
   , 'Column "name" 'W 'R PGText String
@@ -161,76 +164,62 @@ type instance Columns Department =
 
 -- | As specified in @'Columns' 'Department'@, instead of just using 'Int32'
 -- for our department identifiers, we will use a newtype around it.
-newtype DepartmentId = DepartmentId { unDepartmentId :: Int32 }
-  deriving (Eq, Show)
+newtype Key (table :: k) typ = Key { unKey :: typ }
 
--- | Since 'DepartmentId' is just a newtype wrapper, we can create a 'Wrapped'
+-- | Since 'Key' is just a newtype wrapper, we can create a 'Wrapped'
 -- instance for it, which will come in handy later. It is not really necessary
 -- to provide this instance, but if you do provide it, you will get a default
--- implementation for 'ToKol' later on.
-instance Wrapped DepartmentId where
-  type Unwrapped DepartmentId = Int32
-  _Wrapped' = iso unDepartmentId DepartmentId
+instance Wrapped (Key table typ) where
+  type Unwrapped (Key table typ) = typ
+  _Wrapped' = iso unKey Key
 
--- | We also want to use 'DepartmentId' instead of 'PGInt4' in the PostgreSQL
--- side of things. Notice that in this case 'DepartmentId' will only ever be
+-- | We also want to use 'Key Department Int32' instead of 'PGInt4' in the PostgreSQL
+-- side of things. Notice that in this case 'Key Department Int32' will only ever be
 -- used nominally, as a type, and never as a term, so the 'Int32' mentioned in
--- the 'DepartmentId' constructor doesn't matter at all. @'PgType' DepartmentId
--- ~ 'PGInt4'@ says that the underlying representation for 'DepartmentId' is
--- 'PGInt4', and that it is safe to upcast @'Kol' 'DepartmentId'@ to
--- @'Kol' 'PGInt4'@, and downcast @'Kol' 'PGInt4'@ to @'Kol' 'DepartmentId'
+-- the 'Key' constructor doesn't matter at all. @'PgType' (Key Department Int32)
+-- ~ 'PGInt4'@ says that the underlying representation for 'Key Department Int32' is
+-- 'PGInt4', and that it is safe to upcast @'Kol' 'Key Department Int32'@ to
+-- @'Kol' 'PGInt4'@, and downcast @'Kol' 'PGInt4'@ to @'Kol' 'Key Department Int32'
 -- internally if needed (see Law 1 of 'PgTyped').
-instance PgTyped DepartmentId where
-  type PgType DepartmentId = PGInt4
+instance PgTyped (Key table Int32) where
+  type PgType (Key table Int32) = PGInt4
 
--- The most practical way of creating a @'Kol' 'DepartmentId'@, which is the
--- expected type for the value contained in the @"department_id"@ column of our
--- 'Department' table, is to introduce a @'ToKol' 'DepartmentId' 'DeparmentId'@.
+-- The most practical way of creating a @'Kol' 'Key Department Int32'@, which is
+-- the expected type for the value contained in the @"department_id"@ column of
+-- our 'Department' table, is to introduce a
+-- @'ToKol' 'Key Department Int32' 'Key Department Int32'@.
 --
--- @'ToKol' 'DepartmentId' 'DepartmentId'@ says that, given a 'DepartmentId'
--- value (first argument to 'ToKol'), we can obtain a @'Kol' 'DepartmentId'@
--- (second argument to 'ToKol') with 'kol':
+-- @'ToKol' 'Key Department Int32' 'Key Department Int32'@ says that, given a
+-- 'Key Department Int32' value (first argument to 'ToKol'), we can obtain a
+-- @'Kol' 'Key Department Int32'@ (second argument to 'ToKol') with 'kol':
 --
 -- @
--- 'kol' :: 'DepartmentId' -> 'Kol' 'DepartmentId'
+-- 'kol' :: 'Key Department Int32' -> 'Kol' 'Key Department Int32'
 -- @
 --
 -- Since we have a 'Wrapped' instance around 'Int32' for the first parameter
--- 'DepartmentId', and @'PgType' 'Department' ~ 'PGInt4'@, and there exists
--- already a @'ToKol' 'Int32' 'O.PGInt4'@, the implementation of the 'kol' method
--- within the 'ToKol' instance comes for free. Otherwise, we would have needed
--- to implement it ourselves. In fact, manually definining this instance for
--- 'Wrapped' types is completely unnecessary, since there exists a “catch all”
--- instance already, so let's leave 'ToKol' out.
+-- 'Key Department Int32', and @'PgType' 'Key Department Int32' ~ 'PGInt4'@,
+-- and there exists already a @'ToKol' 'Int32' 'O.PGInt4'@, the implementation
+-- of the 'kol' method within the 'ToKol' instance comes for free. Otherwise, we
+-- would have needed to implement it ourselves. In fact, manually definining this
+-- instance for 'Wrapped' types is completely unnecessary, since there exists a
+-- “catch all” instance already, so let's leave 'ToKol' out.
 --
---    instance ToKol DepartmentId DepartmentId
-
-
+--    instance ToKol (Key table Int32) (Key table Int32)
 
 -- | We will want to be able to compare this field for equality, so let's
--- provide a 'PgEq' instance for 'DepartmentId'.
-instance PgEq DepartmentId
+-- provide a 'PgEq' instance for 'Key Department Int32'.
+instance PgEq (Key table Int32)
 
 -- | Last, we need to be able to parse the values coming from the database into
 -- Haskell terms. For this, we create a 'QueryRunnerColumnDefault' instance.
 -- In our case, since 'DepartmentId' is just a wrapper around 'Int32' which
 -- already has a @'QueryRunnerColumnDefault' 'PGInt4' 'Int32'@ instance, we can
 -- just use 'qrcWrapped'.
-instance QueryRunnerColumnDefault PGInt4 DepartmentId where
+instance QueryRunnerColumnDefault PGInt4 (Key table Int32) where
   queryRunnerColumnDefault = qrcWrapped
 
----
-
-newtype BranchId = BranchId { unBranchId :: Int32 }
-  deriving (Eq, Show)
-instance Wrapped BranchId where
-  type Unwrapped BranchId = Int32
-  _Wrapped' = iso unBranchId BranchId
-instance PgTyped BranchId where
-  type PgType BranchId = PGInt4
-instance ToKol BranchId BranchId
-instance QueryRunnerColumnDefault PGInt4 BranchId where
-  queryRunnerColumnDefault = qrcWrapped
+type BranchId = Key Branch Int32
 
 data Branch
 data instance Table Branch = Branch
@@ -248,17 +237,7 @@ type instance Columns Branch =
 
 ---
 
-newtype EmployeeId = EmployeeId { unEmployeeId :: Int32 }
-  deriving (Eq, Show)
-instance Wrapped EmployeeId where
-  type Unwrapped EmployeeId = Int32
-  _Wrapped' = iso unEmployeeId EmployeeId
-instance PgTyped EmployeeId where
-  type PgType EmployeeId = PGInt4
-instance ToKol EmployeeId EmployeeId
-instance QueryRunnerColumnDefault PGInt4 EmployeeId where
-  queryRunnerColumnDefault = qrcWrapped
-
+type EmployeeId = Key Employee Int32
 
 data Employee
 data instance Table Employee = Employee
@@ -279,16 +258,7 @@ type instance Columns Employee =
 
 ---
 
-newtype ProductTypeId = ProductTypeId { unProductTypeId :: Int32 }
-  deriving (Eq, Show)
-instance Wrapped ProductTypeId where
-  type Unwrapped ProductTypeId = Int32
-  _Wrapped' = iso unProductTypeId ProductTypeId
-instance PgTyped ProductTypeId where
-  type PgType ProductTypeId = PGInt4
-instance ToKol ProductTypeId ProductTypeId
-instance QueryRunnerColumnDefault PGInt4 ProductTypeId where
-  queryRunnerColumnDefault = qrcWrapped
+type ProductTypeId = Key ProductType Int32
 
 data ProductType
 data instance Table ProductType = ProductType
@@ -302,16 +272,7 @@ type instance Columns ProductType =
 
 ---
 
-newtype ProductId = ProductId { unProductId :: Int32 }
-  deriving (Eq, Show)
-instance Wrapped ProductId where
-  type Unwrapped ProductId = Int32
-  _Wrapped' = iso unProductId ProductId
-instance PgTyped ProductId where
-  type PgType ProductId = PGInt4
-instance ToKol ProductId ProductId
-instance QueryRunnerColumnDefault PGInt4 ProductId where
-  queryRunnerColumnDefault = qrcWrapped
+type ProductId = Key Product Int32
 
 newtype ProductCode = ProductCode { unProductCode :: String }
   deriving (Eq, Show)
@@ -340,17 +301,7 @@ type instance Columns Product =
 
 ---
 
-newtype CustomerId = CustomerId { unCustomerId :: Int32 }
-  deriving (Eq, Show)
-instance Wrapped CustomerId where
-  type Unwrapped CustomerId = Int32
-  _Wrapped' = iso unCustomerId CustomerId
-instance PgTyped CustomerId where
-  type PgType CustomerId = PGInt4
-instance PgEq CustomerId
-instance ToKol CustomerId CustomerId
-instance QueryRunnerColumnDefault PGInt4 CustomerId where
-  queryRunnerColumnDefault = qrcWrapped
+type CustomerId = Key Customer Int32
 
 data CustomerType
    = CustomerType_I
@@ -398,16 +349,7 @@ type instance Columns Individual =
 
 ---
 
-newtype BizStateId = BizStateId { unBizStateId :: Int32 }
-  deriving (Eq, Show)
-instance Wrapped BizStateId where
-  type Unwrapped BizStateId = Int32
-  _Wrapped' = iso unBizStateId BizStateId
-instance PgTyped BizStateId where
-  type PgType BizStateId = PGInt4
-instance ToKol BizStateId BizStateId
-instance QueryRunnerColumnDefault PGInt4 BizStateId where
-  queryRunnerColumnDefault = qrcWrapped
+type BizStateId = Key "BizState" Int32
 
 data Business
 data instance Table Business = Business
@@ -423,16 +365,7 @@ type instance Columns Business =
 
 ---
 
-newtype OfficerId = OfficerId { unOfficerId :: Int32 }
-  deriving (Eq, Show)
-instance Wrapped OfficerId where
-  type Unwrapped OfficerId = Int32
-  _Wrapped' = iso unOfficerId OfficerId
-instance PgTyped OfficerId where
-  type PgType OfficerId = PGInt4
-instance ToKol OfficerId OfficerId
-instance QueryRunnerColumnDefault PGInt4 OfficerId where
-  queryRunnerColumnDefault = qrcWrapped
+type OfficerId = Key Officer Int32
 
 data Officer
 data instance Table Officer = Officer
@@ -451,17 +384,7 @@ type instance Columns Officer =
 
 ---
 
-newtype AccountId = AccountId { unAccountId :: Int32 }
-  deriving (Eq, Show)
-instance Wrapped AccountId where
-  type Unwrapped AccountId = Int32
-  _Wrapped' = iso unAccountId AccountId
-instance PgTyped AccountId where
-  type PgType AccountId = PGInt4
-instance PgEq AccountId
-instance ToKol AccountId AccountId
-instance QueryRunnerColumnDefault PGInt4 AccountId where
-  queryRunnerColumnDefault = qrcWrapped
+type AccountId = Key Account Int32
 
 data AccountStatus
    = AccountStatus_Active
@@ -507,17 +430,7 @@ type instance Columns Account =
 
 ---
 
-newtype TransactionId = TransactionId { unTransactionId :: Int32 }
-  deriving (Eq, Show)
-instance Wrapped TransactionId where
-  type Unwrapped TransactionId = Int32
-  _Wrapped' = iso unTransactionId TransactionId
-instance PgTyped TransactionId where
-  type PgType TransactionId = PGInt4
--- instance ToKol TransactionId PGInt4
-instance ToKol TransactionId TransactionId
-instance QueryRunnerColumnDefault PGInt4 TransactionId where
-  queryRunnerColumnDefault = qrcWrapped
+type TransactionId = Key Transaction Int32
 
 data TransactionType
    = TransactionType_Debit
