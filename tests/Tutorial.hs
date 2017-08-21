@@ -87,6 +87,7 @@ module Tutorial
   , TransactionType(..)
   , Table(..)
   , Key(..)
+  , Db1
   , q_Account_desc
   , q_Account_asc_multi
   , q_Account_in_static
@@ -164,7 +165,7 @@ type instance Columns Department =
 
 -- | As specified in @'Columns' 'Department'@, instead of just using 'Int32'
 -- for our department identifiers, we will use a newtype around it.
-newtype Key (table :: k) typ = Key { unKey :: typ }
+newtype Key (table :: k) typ = Key { unKey :: typ } deriving (Show)
 
 -- | Since 'Key' is just a newtype wrapper, we can create a 'Wrapped'
 -- instance for it, which will come in handy later. It is not really necessary
@@ -181,8 +182,8 @@ instance Wrapped (Key table typ) where
 -- 'PGInt4', and that it is safe to upcast @'Kol' 'Key Department Int32'@ to
 -- @'Kol' 'PGInt4'@, and downcast @'Kol' 'PGInt4'@ to @'Kol' 'Key Department Int32'
 -- internally if needed (see Law 1 of 'PgTyped').
-instance PgTyped (Key table Int32) where
-  type PgType (Key table Int32) = PGInt4
+instance (PgTyped typ) => PgTyped (Key table typ) where
+  type PgType (Key table typ) = PgType typ
 
 -- The most practical way of creating a @'Kol' 'Key Department Int32'@, which is
 -- the expected type for the value contained in the @"department_id"@ column of
@@ -209,17 +210,37 @@ instance PgTyped (Key table Int32) where
 
 -- | We will want to be able to compare this field for equality, so let's
 -- provide a 'PgEq' instance for 'Key Department Int32'.
-instance PgEq (Key table Int32)
+instance (PgTyped typ) => PgEq (Key table typ)
 
 -- | Last, we need to be able to parse the values coming from the database into
 -- Haskell terms. For this, we create a 'QueryRunnerColumnDefault' instance.
 -- In our case, since 'DepartmentId' is just a wrapper around 'Int32' which
 -- already has a @'QueryRunnerColumnDefault' 'PGInt4' 'Int32'@ instance, we can
 -- just use 'qrcWrapped'.
-instance QueryRunnerColumnDefault PGInt4 (Key table Int32) where
+instance (PgType typ ~ primTyp, QueryRunnerColumnDefault primTyp typ) =>
+         QueryRunnerColumnDefault primTyp (Key table typ) where
   queryRunnerColumnDefault = qrcWrapped
 
+instance PgTyped Int32 where
+  type PgType Int32 = PGInt4
+
+instance PgTyped Float where
+  type PgType Float = PGFloat4
+instance PgEq Float
+
+instance PgTyped String where
+  type PgType String = PGText
+instance PgEq String
+instance ToKol String String where
+  kol = unsafeDowncastKol . kol
+
+instance PgTyped Day where
+  type PgType Day = PGDate
+instance ToKol Day Day where
+  kol = unsafeDowncastKol . kol
+
 type BranchId = Key Branch Int32
+type Column' f d n t = 'Column f d n t t
 
 data Branch
 data instance Table Branch = Branch
@@ -227,12 +248,12 @@ type instance Database Branch = Db1
 type instance SchemaName Branch = "public"
 type instance TableName Branch = "branch"
 type instance Columns Branch =
-    [ 'Column "branch_id" 'WD 'R BranchId BranchId
-    , 'Column "name" 'W 'R PGText String
-    , 'Column "address" 'W 'RN PGText String
-    , 'Column "city" 'W 'RN PGText String
-    , 'Column "state" 'W 'RN PGText String
-    , 'Column "zip" 'W 'RN PGText String
+    [ Column' "branch_id" 'WD 'R BranchId
+    , Column' "name" 'W 'R String
+    , Column' "address" 'W 'RN String
+    , Column' "city" 'W 'RN String
+    , Column' "state" 'W 'RN String
+    , Column' "zip" 'W 'RN String
     ]
 
 ---
@@ -245,15 +266,15 @@ type instance Database Employee = Db1
 type instance SchemaName Employee = "public"
 type instance TableName Employee = "employee"
 type instance Columns Employee =
-    [ 'Column "employee_id" 'WD 'R EmployeeId EmployeeId
-    , 'Column "fname" 'W 'R PGText String
-    , 'Column "lname" 'W 'R PGText String
-    , 'Column "start_date" 'W 'R PGDate Day
-    , 'Column "end_date" 'W 'RN PGDate Day
-    , 'Column "superior_employee_id" 'W 'RN EmployeeId EmployeeId
-    , 'Column "department_id" 'W 'RN DepartmentId DepartmentId
-    , 'Column "title" 'W 'RN PGText String
-    , 'Column "assigned_branch_id" 'W 'RN BranchId BranchId
+    [ Column' "employee_id" 'WD 'R EmployeeId
+    , Column' "fname" 'W 'R String
+    , Column' "lname" 'W 'R String
+    , Column' "start_date" 'W 'R Day
+    , Column' "end_date" 'W 'RN Day
+    , Column' "superior_employee_id" 'W 'RN EmployeeId
+    , Column' "department_id" 'W 'RN DepartmentId
+    , Column' "title" 'W 'RN String
+    , Column' "assigned_branch_id" 'W 'RN BranchId
     ]
 
 ---
@@ -266,8 +287,8 @@ type instance Database ProductType = Db1
 type instance SchemaName ProductType = "public"
 type instance TableName ProductType = "product_type"
 type instance Columns ProductType =
-    [ 'Column "product_type_cd" 'W 'R ProductTypeId ProductTypeId
-    , 'Column "name" 'W 'R PGText String
+    [ Column' "product_type_cd" 'W 'R ProductTypeId
+    , Column' "name" 'W 'R String
     ]
 
 ---
@@ -292,11 +313,11 @@ type instance Database Product = Db1
 type instance SchemaName Product = "public"
 type instance TableName Product = "product"
 type instance Columns Product =
-    [ 'Column "product_cd" 'W 'R ProductCode ProductCode
-    , 'Column "name" 'W 'R PGText String
-    , 'Column "product_type_cd" 'W 'R ProductTypeId ProductTypeId
-    , 'Column "date_offered" 'W 'RN PGDate Day
-    , 'Column "date_retired" 'W 'RN PGDate Day
+    [ Column' "product_cd" 'W 'R ProductCode
+    , Column' "name" 'W 'R String
+    , Column' "product_type_cd" 'W 'R ProductTypeId
+    , Column' "date_offered" 'W 'RN Day
+    , Column' "date_retired" 'W 'RN Day
     ]
 
 ---
@@ -324,13 +345,13 @@ type instance Database Customer = Db1
 type instance SchemaName Customer = "public"
 type instance TableName Customer = "customer"
 type instance Columns Customer =
-    [ 'Column "customer_id" 'WD 'R CustomerId CustomerId
-    , 'Column "fed_id" 'W 'R PGText String -- I have no idea what "fed" is supposed to mean.
-    , 'Column "cust_type_cd" 'W 'R CustomerType CustomerType
-    , 'Column "address" 'W 'RN PGText String
-    , 'Column "city" 'W 'RN PGText String
-    , 'Column "state" 'W 'RN PGText String
-    , 'Column "postal_code" 'W 'RN PGText String
+    [ Column' "customer_id" 'WD 'R CustomerId
+    , Column' "fed_id" 'W 'R String -- I have no idea what "fed" is supposed to mean.
+    , Column' "cust_type_cd" 'W 'R CustomerType
+    , Column' "address" 'W 'RN String
+    , Column' "city" 'W 'RN String
+    , Column' "state" 'W 'RN String
+    , Column' "postal_code" 'W 'RN String
     ]
 
 ---
@@ -341,10 +362,10 @@ type instance Database Individual = Db1
 type instance SchemaName Individual = "public"
 type instance TableName Individual = "individual"
 type instance Columns Individual =
-    [ 'Column "customer_id" 'W 'R CustomerId CustomerId
-    , 'Column "fname" 'W 'R PGText String
-    , 'Column "lname" 'W 'R PGText String
-    , 'Column "birth_date" 'W 'RN PGDate Day
+    [ Column' "customer_id" 'W 'R CustomerId
+    , Column' "fname" 'W 'R String
+    , Column' "lname" 'W 'R String
+    , Column' "birth_date" 'W 'RN Day
     ]
 
 ---
@@ -357,10 +378,10 @@ type instance Database Business = Db1
 type instance SchemaName Business = "public"
 type instance TableName Business = "business"
 type instance Columns Business =
-    [ 'Column "customer_id" 'W 'R CustomerId CustomerId
-    , 'Column "name" 'W 'R PGText String
-    , 'Column "state_id" 'W 'R BizStateId BizStateId
-    , 'Column "incorp_date" 'W 'RN PGDate Day
+    [ Column' "customer_id" 'W 'R CustomerId
+    , Column' "name" 'W 'R String
+    , Column' "state_id" 'W 'R BizStateId
+    , Column' "incorp_date" 'W 'RN Day
     ]
 
 ---
@@ -373,13 +394,13 @@ type instance Database Officer = Db1
 type instance SchemaName Officer = "public"
 type instance TableName Officer = "officer"
 type instance Columns Officer =
-    [ 'Column "officer_id" 'WD 'R OfficerId OfficerId
-    , 'Column "customer_id" 'W 'R CustomerId CustomerId
-    , 'Column "fname" 'W 'R PGText String
-    , 'Column "lname" 'W 'R PGText String
-    , 'Column "title" 'W 'RN PGText String
-    , 'Column "start_date" 'W 'R PGDate Day
-    , 'Column "end_date" 'W 'RN PGDate Day
+    [ Column' "officer_id" 'WD 'R OfficerId
+    , Column' "customer_id" 'W 'R CustomerId
+    , Column' "fname" 'W 'R String
+    , Column' "lname" 'W 'R String
+    , Column' "title" 'W 'RN String
+    , Column' "start_date" 'W 'R Day
+    , Column' "end_date" 'W 'RN Day
     ]
 
 ---
@@ -415,17 +436,17 @@ type instance Database Account = Db1
 type instance SchemaName Account = "public"
 type instance TableName Account = "account"
 type instance Columns Account =
-    [ 'Column "account_id" 'WD 'R AccountId AccountId
-    , 'Column "product_cd" 'W 'R ProductCode ProductCode
-    , 'Column "customer_id" 'W 'R CustomerId CustomerId
-    , 'Column "open_date" 'W 'R PGDate Day
-    , 'Column "close_date" 'W 'RN PGDate Day
-    , 'Column "last_activity_date" 'W 'RN PGDate Day
-    , 'Column "status" 'W 'R AccountStatus AccountStatus
-    , 'Column "open_branch_id" 'W 'RN PGInt4 BranchId
-    , 'Column "open_employee_id" 'W 'RN PGInt4 EmployeeId
-    , 'Column "avail_balance" 'W 'RN PGFloat4 Float
-    , 'Column "pending_balance" 'W 'RN PGFloat4 Float
+    [ Column' "account_id" 'WD 'R AccountId
+    , Column' "product_cd" 'W 'R ProductCode
+    , Column' "customer_id" 'W 'R CustomerId
+    , Column' "open_date" 'W 'R Day
+    , Column' "close_date" 'W 'RN Day
+    , Column' "last_activity_date" 'W 'RN Day
+    , Column' "status" 'W 'R AccountStatus
+    , Column' "open_branch_id" 'W 'RN BranchId
+    , Column' "open_employee_id" 'W 'RN EmployeeId
+    , Column' "avail_balance" 'W 'RN Float
+    , Column' "pending_balance" 'W 'RN Float
     ]
 
 ---
@@ -456,14 +477,14 @@ type instance Database Transaction = Db1
 type instance SchemaName Transaction = "public"
 type instance TableName Transaction = "transaction"
 type instance Columns Transaction =
-   '[ 'Column "txn_id" 'WD 'R TransactionId TransactionId
-    , 'Column "txn_date" 'W 'R PGTimestamp LocalTime
-    , 'Column "account_id" 'W 'R AccountId AccountId
-    , 'Column "txn_type_cd" 'W 'RN TransactionType TransactionType
-    , 'Column "amount" 'W 'R PGFloat4 Float
-    , 'Column "teller_employee_id" 'W 'RN EmployeeId EmployeeId
-    , 'Column "execution_branch_id" 'W 'RN BranchId BranchId
-    , 'Column "funds_avail_date" 'W 'RN PGTimestamp LocalTime
+   '[ Column' "txn_id" 'WD 'R TransactionId
+    , Column' "txn_date" 'W 'R LocalTime
+    , Column' "account_id" 'W 'R AccountId
+    , Column' "txn_type_cd" 'W 'RN TransactionType
+    , Column' "amount" 'W 'R Float
+    , Column' "teller_employee_id" 'W 'RN EmployeeId
+    , Column' "execution_branch_id" 'W 'RN BranchId
+    , Column' "funds_avail_date" 'W 'RN LocalTime
     ]
 
 --------------------------------------------------------------------------------
